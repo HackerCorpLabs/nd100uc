@@ -1,0 +1,2245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ND-100/110/120 Microcode Disassembler</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --primary: #3498db;
+            --primary-dark: #2980b9;
+            --secondary: #2c3e50;
+            --accent: #e74c3c;
+            --bg-body: #f5f5f5;
+            --bg-card: #fff;
+            --bg-code: #ecf0f1;
+            --text-primary: #2c3e50;
+            --text-secondary: #7f8c8d;
+            --text-muted: #95a5a6;
+            --border: #ddd;
+            --hover-bg: #f0f0f0;
+            --active-bg: #e8f4fc;
+            --active-border: #3498db;
+            --bit-on: #27ae60;
+            --bit-off: #ecf0f1;
+            --bit-border: #bdc3c7;
+        }
+
+        .dark-theme {
+            --primary: #3498db;
+            --primary-dark: #5dade2;
+            --secondary: #0a0a15;
+            --accent: #e74c3c;
+            --bg-body: #1a1a2e;
+            --bg-card: #16213e;
+            --bg-code: #0f3460;
+            --text-primary: #ecf0f1;
+            --text-secondary: #bdc3c7;
+            --text-muted: #7f8c8d;
+            --border: #34495e;
+            --hover-bg: #1e2a4a;
+            --active-bg: #1e3a5f;
+            --active-border: #3498db;
+            --bit-on: #2ecc71;
+            --bit-off: #34495e;
+            --bit-border: #5d6d7e;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            font-size: 14px;
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: var(--primary);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+
+        .header-logo { height: 32px; width: auto; mix-blend-mode: multiply; }
+
+        .header h1 { font-size: 18px; font-weight: 600; }
+
+        .header-controls { display: flex; gap: 10px; align-items: center; }
+
+        .settings-btn {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .settings-btn:hover { background: rgba(255,255,255,0.3); }
+
+        select {
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        select option { color: #333; background: white; }
+
+        .main-area {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Listing pane */
+        .listing-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            min-width: 0;
+        }
+
+        .listing-toolbar {
+            display: flex;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .listing-toolbar input {
+            padding: 5px 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 13px;
+            background: var(--bg-body);
+            color: var(--text-primary);
+        }
+
+        .listing-toolbar button {
+            padding: 5px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .listing-toolbar button:hover { background: var(--hover-bg); }
+
+        .listing-toolbar .search-box { flex: 1; min-width: 100px; }
+
+        .listing-content {
+            flex: 1;
+            overflow-y: auto;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+        }
+
+        .listing-row {
+            display: flex;
+            padding: 2px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid transparent;
+            white-space: nowrap;
+        }
+        .listing-row:hover { background: var(--hover-bg); }
+        .listing-row.active { background: var(--active-bg); border-left: 3px solid var(--active-border); }
+        .listing-row.has-label { margin-top: 8px; }
+
+        .listing-addr {
+            color: var(--text-muted);
+            min-width: 60px;
+            user-select: none;
+        }
+
+        .listing-hex {
+            color: var(--text-secondary);
+            min-width: 170px;
+            margin-left: 8px;
+        }
+
+        .listing-label {
+            color: var(--accent);
+            min-width: 100px;
+            margin-left: 8px;
+            font-weight: 600;
+        }
+
+        .listing-asm {
+            margin-left: 8px;
+            color: var(--text-primary);
+            white-space: pre-wrap;
+        }
+
+        .listing-asm .field-token { cursor: help; }
+        .listing-asm .field-alu { color: #e67e22; }
+        .listing-asm .field-dest { color: #27ae60; }
+        .listing-asm .field-src { color: #8e44ad; }
+        .listing-asm .field-seq { color: #2980b9; }
+        .listing-asm .field-cmd { color: #c0392b; }
+        .listing-asm .field-cond { color: #16a085; }
+        .listing-asm .field-idbs { color: #d35400; }
+        .listing-asm .field-misc { color: var(--text-secondary); }
+        .listing-asm .field-addr { color: #2980b9; text-decoration: underline; cursor: pointer; }
+        .listing-asm .field-sep { color: var(--text-muted); }
+        .listing-asm .asm-line-break { display: block; }
+
+        /* Alternating instruction backgrounds */
+        .listing-group-even { background: var(--bg-surface); }
+        .listing-group-odd  { background: var(--bg-card); }
+        .dark-theme .listing-group-even { background: rgba(255,255,255,0.02); }
+        .dark-theme .listing-group-odd  { background: rgba(255,255,255,0.05); }
+
+        .listing-footer {
+            padding: 6px 12px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .page-controls button {
+            padding: 3px 8px;
+            margin: 0 2px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .page-controls button:disabled { opacity: 0.4; cursor: default; }
+
+        /* Detail panel */
+        .detail-panel {
+            width: 480px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            background: var(--bg-card);
+            flex-shrink: 0;
+        }
+
+        .detail-header {
+            padding: 12px;
+            background: var(--bg-code);
+            border-bottom: 1px solid var(--border);
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+        }
+
+        .hex-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            margin-top: 6px;
+        }
+
+        .hex-byte {
+            padding: 2px 4px;
+            background: var(--bg-body);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            font-size: 11px;
+            min-width: 28px;
+            text-align: center;
+        }
+
+        .detail-fields {
+            padding: 12px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .field-group {
+            margin-bottom: 12px;
+        }
+
+        .field-group-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            padding-bottom: 2px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .field-entry {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+            font-size: 12px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .field-name { color: var(--text-secondary); min-width: 140px; }
+        .field-value { font-weight: 600; }
+        .field-mnemonic { color: var(--primary-dark); margin-left: 8px; }
+
+        .bit-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1px;
+            margin: 4px 0;
+        }
+
+        .bit-box {
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            border: 1px solid var(--bit-border);
+            border-radius: 1px;
+            cursor: help;
+        }
+
+        .bit-box.on { background: var(--bit-on); color: white; }
+        .bit-box.off { background: var(--bit-off); }
+
+        /* Tooltip */
+        .tooltip {
+            position: fixed;
+            background: var(--secondary);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-width: 400px;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            line-height: 1.4;
+        }
+
+        /* Reference modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 900;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 900px;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .ref-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .ref-table th, .ref-table td {
+            padding: 4px 8px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .ref-table th {
+            background: var(--bg-code);
+            font-weight: 600;
+        }
+
+        .ref-table tr:hover { background: var(--hover-bg); }
+
+        .placeholder-msg {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Export menu */
+        .export-menu {
+            position: relative;
+            display: inline-block;
+        }
+
+        .export-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 100;
+            min-width: 160px;
+        }
+
+        .export-dropdown.show { display: block; }
+
+        .export-dropdown button {
+            display: block;
+            width: 100%;
+            padding: 8px 16px;
+            border: none;
+            background: none;
+            color: var(--text-primary);
+            text-align: left;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .export-dropdown button:hover { background: var(--hover-bg); }
+
+        .toggle-panel-btn {
+            display: none;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        /* Pseudo-code view */
+        .listing-pseudo {
+            margin-left: 8px;
+            color: var(--text-primary);
+            font-size: 12px;
+            white-space: pre;
+        }
+        .listing-pseudo .pseudo-kw { color: #2980b9; font-weight: 600; }
+        .listing-pseudo .pseudo-reg { color: #8e44ad; }
+        .listing-pseudo .pseudo-op { color: #e67e22; }
+        .listing-pseudo .pseudo-cmt { color: var(--text-muted); font-style: italic; }
+        .listing-pseudo .pseudo-addr { color: #2980b9; text-decoration: underline; cursor: pointer; }
+        .listing-pseudo .pseudo-warn { color: var(--accent); font-weight: 600; }
+
+        /* View toggle */
+        .view-toggle {
+            display: flex;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            font-size: 12px;
+        }
+        .view-toggle button {
+            padding: 4px 10px;
+            border: none;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .view-toggle button.active {
+            background: var(--primary);
+            color: white;
+        }
+        .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+
+        /* Opcode mapping indicator */
+        .listing-opcode {
+            color: #16a085;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+            opacity: 0.85;
+        }
+
+        .opcode-badge {
+            display: inline-block;
+            background: #E0F2F1;
+            color: #00695C;
+            border: 1px solid #00695C;
+            border-radius: 3px;
+            padding: 0 4px;
+            font-size: 10px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            margin-right: 4px;
+        }
+        .dark-theme .opcode-badge {
+            background: #1a3a3a;
+            color: #4db6ac;
+            border-color: #4db6ac;
+        }
+
+        @media (max-width: 900px) {
+            .detail-panel { display: none; }
+            .detail-panel.visible { display: flex; position: absolute; right: 0; top: 0; bottom: 0; z-index: 50; width: 400px; }
+            .toggle-panel-btn { display: inline-block; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div style="display:flex;align-items:center;gap:12px">
+            <img src="Logo_ND.png" alt="ND" class="header-logo" onerror="this.style.display='none'">
+            <h1>ND-100/110/120 Microcode Disassembler</h1>
+        </div>
+        <div class="header-controls">
+            <select id="fileSelect" title="Select microcode file"></select>
+            <button class="settings-btn" id="refBtn" title="Field Reference">Ref</button>
+            <div class="export-menu">
+                <button class="settings-btn" id="exportBtn">Export</button>
+                <div class="export-dropdown" id="exportDropdown">
+                    <button onclick="exportText()">Text (.txt)</button>
+                    <button onclick="exportMarkdown()">Markdown (.md)</button>
+                </div>
+            </div>
+            <button class="toggle-panel-btn" id="togglePanel" title="Toggle detail panel">&#9776;</button>
+            <button class="settings-btn" id="themeBtn" title="Toggle theme">&#9790;</button>
+        </div>
+    </div>
+    <div class="main-area">
+        <div class="listing-pane">
+            <div class="listing-toolbar">
+                <input type="text" id="addrInput" placeholder="Octal addr" style="width:90px" title="Jump to octal address">
+                <button id="goBtn">Go</button>
+                <input type="text" id="searchInput" class="search-box" placeholder="Search labels...">
+                <button id="searchBtn">Find</button>
+                <div class="view-toggle">
+                    <button id="viewAsm" class="active" title="Mnemonic view">ASM</button>
+                    <button id="viewPseudo" title="Pseudo-code view">Pseudo</button>
+                </div>
+                <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px">
+                    <input type="checkbox" id="hideEmpty"> Hide empty
+                </label>
+                <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px">
+                    <input type="checkbox" id="showOpcodes"> Opcodes
+                </label>
+                <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px">
+                    <input type="checkbox" id="multiLine" checked> 3-line
+                </label>
+            </div>
+            <div class="listing-content" id="listingContent"></div>
+            <div class="listing-footer">
+                <span id="statusText">Loading...</span>
+                <div class="page-controls">
+                    <button id="prevPage">&laquo; Prev</button>
+                    <span id="pageInfo"></span>
+                    <button id="nextPage">Next &raquo;</button>
+                </div>
+            </div>
+        </div>
+        <div class="detail-panel" id="detailPanel">
+            <div class="placeholder-msg" id="detailPlaceholder">
+                Select a microcode instruction to view field breakdown
+            </div>
+            <div id="detailContent" style="display:none">
+                <div class="detail-header" id="detailHeader"></div>
+                <div class="detail-fields" id="detailFields"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reference Modal -->
+    <div class="modal-overlay" id="refModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="document.getElementById('refModal').style.display='none'">&times;</button>
+            <h2 style="margin-bottom:16px">ND-120 Microcode Field Reference (64-bit)</h2>
+            <table class="ref-table">
+                <thead>
+                    <tr><th>Bits</th><th>Width</th><th>Field</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>63-61</td><td>3</td><td>ALUD</td><td>ALU Destination (AM2901 I8-I6)</td></tr>
+                    <tr><td>60-58</td><td>3</td><td>ALUF</td><td>ALU Function (AM2901 I5-I3)</td></tr>
+                    <tr><td>57-55</td><td>3</td><td>ALUS</td><td>ALU Source (AM2901 I2-I0)</td></tr>
+                    <tr><td>54-53</td><td>2</td><td>STS</td><td>Status register control</td></tr>
+                    <tr><td>52-50</td><td>3</td><td>RASEL</td><td>Register A source selection</td></tr>
+                    <tr><td>49-48</td><td>2</td><td>RBSEL</td><td>Register B source selection</td></tr>
+                    <tr><td>47-46</td><td>2</td><td>CIN</td><td>Carry input control</td></tr>
+                    <tr><td>45-44</td><td>2</td><td>ALUM</td><td>ALU mode (shift control)</td></tr>
+                    <tr><td>43-42</td><td>2</td><td>MIS</td><td>Miscellaneous / subcommand</td></tr>
+                    <tr><td>41-37</td><td>5</td><td>IDBS</td><td>Internal Data Bus source</td></tr>
+                    <tr><td>36-32</td><td>5</td><td>COMM</td><td>Command code</td></tr>
+                    <tr><td>31-30</td><td>2</td><td>T.SEQ</td><td>True sequence address select</td></tr>
+                    <tr><td>29-28</td><td>2</td><td>T.STK</td><td>True stack control</td></tr>
+                    <tr><td>27-26</td><td>2</td><td>-</td><td>Unused</td></tr>
+                    <tr><td>25</td><td>1</td><td>VECT</td><td>Vectored jump</td></tr>
+                    <tr><td>24</td><td>1</td><td>SCOND</td><td>Set condition register</td></tr>
+                    <tr><td>23</td><td>1</td><td>ECOND</td><td>Enable condition testing</td></tr>
+                    <tr><td>22</td><td>1</td><td>LOOP</td><td>Loop counter control</td></tr>
+                    <tr><td>21</td><td>1</td><td>DELAY</td><td>Microcycle delay</td></tr>
+                    <tr><td>20</td><td>1</td><td>CSBIT20</td><td>Jump address bit 12</td></tr>
+                    <tr><td>19-16</td><td>4</td><td>B-OP</td><td>B operand (register/value)</td></tr>
+                    <tr><td>15-12</td><td>4</td><td>A-OP</td><td>A operand (register/value)</td></tr>
+                    <tr><td>11-8</td><td>4</td><td>COND.HI</td><td>Condition / test extended</td></tr>
+                    <tr><td>7-4</td><td>4</td><td>COND.LO</td><td>Condition / test select</td></tr>
+                    <tr><td>3-2</td><td>2</td><td>F.SEQ</td><td>False sequence address select</td></tr>
+                    <tr><td>1-0</td><td>2</td><td>F.STK</td><td>False stack control</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip" style="display:none"></div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   GLOBALS
+   ========================================================================= */
+let microcodeData = {};   // addr -> {raw: BigInt, word: ulong}
+let labels = {};          // name -> addr
+let labelsByAddr = {};    // addr -> name
+let labelMeta = {};       // addr -> PLA dispatch comment (from % lines)
+let nd100OpcodeMap = {};  // uaddr -> [{opcode, name}] from decode-PLA (ND-100 only)
+let disassembled = [];    // [{addr, hex, label, tokens}]
+let filteredList = [];
+let selectedAddr = -1;
+let currentPage = 0;
+const PAGE_SIZE = 500;
+let currentFile = null;
+let isND110 = false;
+let viewMode = 'asm'; // 'asm' or 'pseudo'
+let showOpcodes = false;
+let multiLineMode = true;
+
+// Opcode mapping: microcode addresses 06000-07777 (octal) = 0xC00-0xFFF
+// correspond to macroinstruction entry points
+// addr = (opcode >> 6) + 0xC00
+// Reverse: opcode_base = (addr - 0xC00) << 6
+const OPCODE_BASE = 0xC00; // 06000 octal
+const OPCODE_END  = 0xFFF; // 07777 octal
+function getOpcodeForAddr(addr) {
+    if (addr < OPCODE_BASE || addr > OPCODE_END) return null;
+    return (addr - OPCODE_BASE) << 6;
+}
+
+// Known ND-100/110/120 instruction mnemonics for common opcodes
+const OPCODE_NAMES = {
+    0o000000: 'STZ',    0o004000: 'STA',    0o010000: 'STT (NOP)',
+    0o014000: 'STX',    0o020000: 'STD',    0o024000: 'STF',
+    0o030000: 'MIN',    0o034000: 'LDD',    0o040000: 'LDF',
+    0o044000: 'LDA',    0o050000: 'LDT',    0o054000: 'LDX',
+    0o060000: 'ADD',    0o064000: 'SUB',    0o070000: 'AND',
+    0o074000: 'ORA',    0o100000: 'FAD',    0o104000: 'FSB',
+    0o110000: 'FMU',    0o114000: 'FDV',    0o120000: 'JMP',
+    0o124000: 'JPL',    0o130000: 'SKP',    0o134000: 'BSKP',
+    0o140000: 'SAA',    0o144000: 'SAS',    0o150000: 'SAT',
+    0o154000: 'SAX',    0o160000: 'AAA',    0o164000: 'AAS',
+    0o170000: 'AAT',    0o174000: 'AAX',
+    // Register ops (bits 15-6 = 1111_00xx_xx)
+    0o150200: 'COPY',   0o150300: 'SWAP',   0o150400: 'BSET',
+    0o151000: 'EXR',    0o151400: 'MON',    0o152000: 'IOX',
+    0o152400: 'TRA',    0o153000: 'ROP',    0o153400: 'EXAM',
+    0o154000: 'DEPO',   0o154400: 'SEX',    0o155000: 'POF',
+    0o155400: 'IOF',    0o156000: 'ION',    0o156400: 'IDENT',
+    0o157000: 'WAIT',   0o157400: 'PIOF',   0o160000: 'PION',
+};
+
+/* =========================================================================
+   FIELD DEFINITIONS  (64-bit microcode word)
+   ========================================================================= */
+const FIELDS = {
+    // ALU control (bits 63-55)
+    ALUD:   { hi: 63, lo: 61, name: 'ALU Dest',    group: 'ALU' },
+    ALUF:   { hi: 60, lo: 58, name: 'ALU Func',    group: 'ALU' },
+    ALUS:   { hi: 57, lo: 55, name: 'ALU Source',   group: 'ALU' },
+    // Register/status (bits 54-44)
+    STS:    { hi: 54, lo: 53, name: 'STS Op',       group: 'REG' },
+    RASEL:  { hi: 52, lo: 50, name: 'RA Select',    group: 'REG' },
+    RBSEL:  { hi: 49, lo: 48, name: 'RB Select',    group: 'REG' },
+    CIN:    { hi: 47, lo: 46, name: 'Carry In',     group: 'REG' },
+    ALUM:   { hi: 45, lo: 44, name: 'ALU Mode',     group: 'REG' },
+    // Control (bits 43-32)
+    MIS:    { hi: 43, lo: 42, name: 'MIS',          group: 'CTRL' },
+    IDBS:   { hi: 41, lo: 37, name: 'IDB Source',   group: 'CTRL' },
+    COMM:   { hi: 36, lo: 32, name: 'Command',      group: 'CTRL' },
+    // Sequencing (bits 31-20)
+    TSEQ:   { hi: 31, lo: 30, name: 'True Seq',     group: 'SEQ' },
+    TSTK:   { hi: 29, lo: 28, name: 'True Stack',   group: 'SEQ' },
+    VECT:   { hi: 25, lo: 25, name: 'VECT',         group: 'SEQ' },
+    SCOND:  { hi: 24, lo: 24, name: 'SCOND',        group: 'SEQ' },
+    ECOND:  { hi: 23, lo: 23, name: 'ECOND',        group: 'SEQ' },
+    LOOP:   { hi: 22, lo: 22, name: 'LOOP',         group: 'SEQ' },
+    DELAY:  { hi: 21, lo: 21, name: 'DELAY',        group: 'SEQ' },
+    CSBIT20:{ hi: 20, lo: 20, name: 'CSBIT20',      group: 'SEQ' },
+    // Operands (bits 19-12)
+    BOP:    { hi: 19, lo: 16, name: 'B Operand',    group: 'OPR' },
+    AOP:    { hi: 15, lo: 12, name: 'A Operand',    group: 'OPR' },
+    // Lower bits (bits 11-0) - dual interpretation:
+    // When SCOND=0: CSBIT_11_0 is jump address bits 11-0
+    // When SCOND=1: bits 11-8=LCC, 7-4=TSEL, 3-2=F.SEQ, 1-0=F.STK
+    LCC:    { hi: 11, lo: 8,  name: 'LCC',           group: 'COND' },
+    TSEL:   { hi: 7,  lo: 4,  name: 'Test Select',   group: 'COND' },
+    FSEQ:   { hi: 3,  lo: 2,  name: 'False Seq',    group: 'COND' },
+    FSTK:   { hi: 1,  lo: 0,  name: 'False Stack',  group: 'COND' },
+};
+
+/* =========================================================================
+   LOOKUP TABLES
+   ========================================================================= */
+const ALU_DEST = ['ALUD,Q','ALUD,NONE','ALUD,B,YA','ALUD,B','ALUD,SRD','ALUD,SRB','ALUD,SLD','ALUD,SLB'];
+const ALU_DEST_DESC = [
+    'F -> Q : F -> Y',
+    'F -> Y (no store)',
+    'F -> B : A -> Y',
+    'F -> B : F -> Y',
+    'F -> Y : (F,Q)/2 -> (B,Q)',
+    'F -> Y : F/2 -> B',
+    'F -> Y : (F,Q)*2 -> (B,Q)',
+    'F -> Y : F*2 -> B'
+];
+
+const ALU_FUNC = ['ADD','SUBR','SUBS','OR','AND','NOTRS','EXOR','EXNOR'];
+const ALU_FUNC_DESC = [
+    'R + S (Addition)',
+    'S - R (Reverse subtract)',
+    'R - S (Subtract)',
+    'R | S (OR)',
+    'R & S (AND)',
+    '~R & ~S (NOR)',
+    'R ^ S (XOR)',
+    '~(R ^ S) (XNOR)'
+];
+
+const ALU_SRC = ['A,Q','A,B','0,Q','0,B','0,A','D,A','D,Q','D,0'];
+const ALU_SRC_DESC = [
+    'R=A, S=Q',
+    'R=A, S=B',
+    'R=0, S=Q',
+    'R=0, S=B',
+    'R=0, S=A',
+    'R=D(IDB), S=A',
+    'R=D(IDB), S=Q',
+    'R=D(IDB), S=0'
+];
+
+const STS_OP = ['HOLD','STS,EA','STS,ES','STS,LO'];
+const STS_OP_DESC = [
+    'Hold STS register',
+    'CRY->C, OVF->Q, OVF|O->O',
+    'ALU shift MSB -> M',
+    'IDB[0:7] -> STS[0:7]'
+];
+
+const RASEL_NAMES = ['uINSTR','GLR','PIL','PCR','REG','SRCE','LC','LOOP'];
+const RBSEL_NAMES = ['uINSTR','DEST','SRCE','LC'];
+
+const CIN_NAMES = ['CRY,0','CRY,1','CRY,C','CRY,GPR'];
+const CIN_DESC = [
+    'Carry input = 0',
+    'Carry input = 1',
+    'Carry input = STS.C',
+    'Carry input = GPR bit 0'
+];
+
+const ALUM_NAMES = ['ALUM,MIC','ALUM,FMU','ALUM,FDV','ALUM,IR'];
+const ALUM_DESC = [
+    'Microprogram controlled shift',
+    'Floating multiply mode',
+    'Floating divide mode',
+    'IR-controlled shift mode'
+];
+
+const MIS_NAMES = ['MIS,0','MIS,ROT','MIS,ZIN','MIS,LIN'];
+const MIS_DESC_SHIFT = [
+    'Normal (no end-around)',
+    'Rotational shift',
+    'Zero end-input shift',
+    'Link end-input shift'
+];
+
+const IDBS_NAMES = [
+    'IDBS,ALU',   'IDBS,BMG',   'IDBS,GPR',    'IDBS,DBR',
+    'IDBS,ARG',   'IDBS,REG',   'IDBS,STS',    'IDBS,spare7',
+    'IDBS,BARG',  'IDBS,SWAP',  'IDBS,PEA',    'IDBS,PES',
+    'IDBS,AARG',  'IDBS,PIC',   'IDBS,IOR',    'IDBS,DSABL',
+    'IDBS,MIPANS','IDBS,MAPANS','IDBS,GPR,SEXT','IDBS,PGS',
+    'IDBS,CSR',   'IDBS,PCR',   'IDBS,ALD',    'IDBS,PANEL',
+    'IDBS,RCS',   'IDBS,PICVC', 'IDBS,spare26','IDBS,spare27',
+    'IDBS,LA',    'IDBS,INR',   'IDBS,PICM',   'IDBS,UART'
+];
+
+const IDBS_DESC = [
+    'ALU result -> IDB',
+    'Bit mask generator -> IDB',
+    'General purpose register -> IDB',
+    'Data bus register -> IDB',
+    'Microcode argument (bits 0-15) -> IDB',
+    'Register file -> IDB',
+    'Status register -> IDB',
+    'Spare (7)',
+    'B-operand argument -> IDB',
+    'Byte-swap previous IDB -> IDB',
+    'PEA register -> IDB',
+    'PES register -> IDB',
+    'A-operand arg (<<3) -> IDB',
+    'PIC status register -> IDB',
+    'UART data/status -> IDB',
+    'Disable IDB source',
+    'Panel status (IR0) MOPC -> IDB',
+    'Panel status (IR0) TRA -> IDB',
+    'GPR sign-extended -> IDB',
+    'Paging status -> IDB',
+    'Cache status register -> IDB',
+    'Paging control register -> IDB',
+    'Auto-load descriptor -> IDB',
+    'Panel interrupt vector -> IDB',
+    'Read control store -> IDB',
+    'PIC interrupt vector -> IDB',
+    'Spare (26)',
+    'Spare (27)',
+    'Logical address (jump) -> IDB',
+    'Installation number -> IDB',
+    'PIC mask register -> IDB',
+    'UART register -> IDB'
+];
+
+const COMM_NAMES = [
+    'NONE',      'LDPIL',     'LDGPR',     'EWRF',
+    'CLIRQ',     'UART',      'PANEL',     'SIOC',
+    'SLOW',      'EPIC',      'SMPID',     'START',
+    'STOP',      'CLRTC',     'CLFF',      'LDLC',
+    'SEGMENT',   'MEMORY',    'PAGING',    'CJUMP1',
+    'CNEXT1',    'CNEXT2',    'JMP',       'JMPX',
+    'AREAD1',    'AREAD2',    'AWRITE1',   'AWRITE2',
+    'READ',      'WRITE',     'CONTROL',   'SPECIAL'
+];
+
+// Sub-command names based on COMM + MIS
+const COMM_MIS = {
+    5:  ['RSDA/DATA', 'STATUS', 'MODE', 'COM'],
+    6:  ['spare', 'spare', 'LDPANC', 'LDPCR'],
+    16: ['LDSEG', 'spare', 'spare', 'LDIRV'],
+    17: ['WCIHM', 'SSEMA', 'CCLR', 'LDEXM'],
+    18: ['IREAD,PT', 'IREAD,APT', 'MAP', 'CNEXT,NWP'],
+    19: ['CJMP,F15', 'CJMP,NF15', 'CJMP,F=0', 'CJMP,NF=0'],
+    20: ['CNEXT,SGR', 'CNEXT,NSGR', 'CNEXT,CRY', 'CNEXT,NCRY'],
+    21: ['CNEXT,F15', 'CNEXT,NF15', 'CNEXT,F=0', 'CNEXT,NF=0'],
+    22: ['JMP,*', 'JMP,B', 'JMP,I', 'JMP,X'],
+    23: ['JMP,XB', 'JMP,XI', 'spare', 'CONTINUE'],
+    24: ['AREAD,*', 'AREAD,B', 'AREAD,I', 'AREAD,X'],
+    25: ['AREAD,XB', 'AREAD,XI', 'spare', 'AREAD,NEXT'],
+    26: ['AWRITE,*', 'AWRITE,B', 'AWRITE,I', 'AWRITE,X'],
+    27: ['AWRITE,XB', 'AWRITE,XI', 'AWRITE,HOLD', 'AWRITE,NEXT'],
+    28: ['RDRQ,PT', 'RDRQ,APT', 'RDRQ,HOLD', 'EXRQ'],
+    29: ['WRRQ,PT', 'WRRQ,APT', 'WRRQ,HOLD', 'DERQ'],
+    30: ['ADCS', 'RWCS', 'MACL', 'XSLOW'],
+    31: ['spare', 'spare', 'IDENT', 'IOX']
+};
+
+const SEQ_NAMES = ['JMP','RETURN','NEXT','REPEAT'];
+const STK_NAMES = ['HOLD','POP','LOAD','PUSH'];
+
+const COND_NAMES = [
+    'DZD','LC=0','IRQ','RESTR','FETCH','OOD','spare6','COND',
+    'rsv8','PXM','OVF','CRY','F11','F15','F=0','STP'
+];
+
+const REG_NAMES = ['Z','D','P','B','L','A','T','X','STS','R1','R2','R3','R4','R5','R6','R7'];
+
+// Microcode variables: (aOp, bOp) -> name
+const MICRO_VARS = {
+    '15,17': 'CDIGI', '14,13': 'UPPNR', '13,13': 'CURNR', '17,17': 'CNT10',
+    '16,16': 'PRCHR', '14,16': 'TXT1',  '13,16': 'TXT2',  '15,14': 'SCRAM',
+    '15,15': 'OCTNR', '15,16': 'DISPL', '13,15': 'OCTAD', '12,16': 'OCTA2',
+    '17,15': 'DEPOS', '16,15': 'DUMPF', '14,15': 'RONLY', '12,15': 'WRTYP',
+    '11,15': 'WRADR', '17,14': 'ACTLV', '15,17': 'PVL',   '12,17': 'IIE',
+    '14,17': 'PID',   '13,17': 'PIE',   '17,16': 'STATUS','15,13': 'OCTN2',
+    '12,12': 'NUMBR', '11,16': 'OPR',   '16,14': 'BRKPT', '14,14': 'SINGL',
+    '13,14': 'BPFLG', '11,14': 'MACL',  '12,14': 'LMP',   '11,13': 'EXMOD',
+    '14,13': 'MANIR', '16,13': 'SSAVE', '14,12': 'UCIL',  '13,12': 'LCIL',
+    '15,12': 'PGS',   '11,12': 'STBNK', '16,12': 'STSRT', '17,12': 'CMBNK',
+    '10,1':  'BAUD',  '15,5':  'OLD303','10,2':  'NOISE'
+};
+
+const PIC_COMMANDS = {
+    0: 'PIC,MCL',    2: 'PIC,MCLPID',  5: 'PIC,RVECT',   6: 'PIC,RSTS',
+    7: 'PIC,RMSK',   9: 'PIC,LOSTS',  12: 'PIC,MCLMSK', 13: 'PIC,MSTMSK',
+    14:'PIC,IOF',    15:'PIC,ION',     11:'PIC,LOSTS',    16:'PIC,LMSK'
+};
+
+/* =========================================================================
+   BIT EXTRACTION
+   ========================================================================= */
+function extractField(v, hi, lo) {
+    const width = hi - lo + 1;
+    const mask = (1n << BigInt(width)) - 1n;
+    return Number((v >> BigInt(lo)) & mask);
+}
+
+function toOctal(n, width) {
+    return n.toString(8).padStart(width || 1, '0');
+}
+
+/* =========================================================================
+   PSEUDO-CODE GENERATOR
+   ========================================================================= */
+function generatePseudo(raw, addr) {
+    const v = BigInt(raw);
+    const lines = [];
+
+    const aluDest = extractField(v, 63, 61);
+    const aluFunc = extractField(v, 60, 58);
+    const aluSrc  = extractField(v, 57, 55);
+    const stsOp   = extractField(v, 54, 53);
+    const rasel   = extractField(v, 52, 50);
+    const rbsel   = extractField(v, 49, 48);
+    const cin     = extractField(v, 47, 46);
+    const alum    = extractField(v, 45, 44);
+    const mis     = extractField(v, 43, 42);
+    const idbs    = extractField(v, 41, 37);
+    const comm    = extractField(v, 36, 32);
+    const tseq    = extractField(v, 31, 30);
+    const tstk    = extractField(v, 29, 28);
+    const vect    = extractField(v, 25, 25);
+    const scond   = extractField(v, 24, 24);
+    const econd   = extractField(v, 23, 23);
+    const loop    = extractField(v, 22, 22);
+    const delay   = extractField(v, 21, 21);
+    const csbit20 = extractField(v, 20, 20);
+    const bop     = extractField(v, 19, 16);
+    const aop     = extractField(v, 15, 12);
+    const tsel    = extractField(v, 7, 4);
+    const fseq    = extractField(v, 3, 2);
+    const fstk    = extractField(v, 1, 0);
+    const csbit11_0 = extractField(v, 11, 0);
+    const jumpAddr = (csbit20 ? 0x1000 : 0) | (((csbit11_0 >> 4) & 0xFF) << 4) | (csbit11_0 & 0xF);
+
+    const regA = REG_NAMES[aop] || ('R' + aop);
+    const regB = REG_NAMES[bop] || ('R' + bop);
+
+    // --- IDB Source ---
+    if (idbs !== 0 && idbs !== 15) { // Not ALU default, not DSABL
+        const idbLine = pseudoIDB(idbs, aop, bop, rasel, v);
+        if (idbLine) lines.push(idbLine);
+    }
+
+    // --- ALU Operation ---
+    const aluLine = pseudoALU(aluDest, aluFunc, aluSrc, cin, bop, rasel, rbsel);
+    if (aluLine) lines.push(aluLine);
+
+    // --- STS Operation ---
+    if (stsOp === 1) lines.push('<span class="pseudo-op">STS.C</span> = CRY; <span class="pseudo-op">STS.O</span> = OVF | STS.O;  <span class="pseudo-cmt">// STS,EA</span>');
+    else if (stsOp === 2) lines.push('<span class="pseudo-op">STS.M</span> = ALU_shift_out;  <span class="pseudo-cmt">// STS,ES</span>');
+    else if (stsOp === 3) lines.push('<span class="pseudo-op">STS[0:7]</span> = IDB[0:7];  <span class="pseudo-cmt">// STS,LO</span>');
+
+    // --- ALU Mode ---
+    if (alum === 1) lines.push('<span class="pseudo-cmt">// ALU mode: FMU (multiply)</span>');
+    else if (alum === 2) lines.push('<span class="pseudo-cmt">// ALU mode: FDV (divide)</span>');
+    else if (alum === 3) lines.push('<span class="pseudo-cmt">// ALU mode: IR shift</span>');
+
+    // --- Command ---
+    const cmdLine = pseudoCommand(comm, mis, aop, bop, rasel, rbsel, v);
+    if (cmdLine) lines.push(cmdLine);
+
+    // --- Delay ---
+    if (delay) lines.push('<span class="pseudo-kw">SLOW_CYCLE</span>();  <span class="pseudo-cmt">// DELAY</span>');
+
+    // --- Condition / Sequencing ---
+    const seqLines = pseudoSequence(scond, econd, loop, vect, tseq, tstk, fseq, fstk, tsel, jumpAddr);
+    lines.push(...seqLines);
+
+    // --- NOP ---
+    if (lines.length === 0) lines.push('<span class="pseudo-cmt">// NOP</span>');
+
+    return lines.join('\n');
+}
+
+function pseudoIDB(idbs, aop, bop, rasel, v) {
+    const regA = REG_NAMES[aop];
+    const IDBS_PSEUDO = {
+        1:  () => `<span class="pseudo-reg">IDB</span> = 1 &lt;&lt; ${aop};  <span class="pseudo-cmt">// BMG bit ${aop}</span>`,
+        2:  () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">GPR</span>;`,
+        3:  () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">DBR</span>;  <span class="pseudo-cmt">// Data Bus Register</span>`,
+        4:  () => { const arg = extractField(v, 15, 0); return `<span class="pseudo-reg">IDB</span> = ${toOctal(arg, 6)};  <span class="pseudo-cmt">// ARG (literal)</span>`; },
+        5:  () => { const vk = aop+','+bop; const vn = MICRO_VARS[vk]; return `<span class="pseudo-reg">IDB</span> = RF[${toOctal(aop,2)},${toOctal(bop,2)}];  <span class="pseudo-cmt">// ${vn || 'Register File'}</span>`; },
+        6:  () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">STS</span>;  <span class="pseudo-cmt">// Status Register</span>`,
+        8:  () => `<span class="pseudo-reg">IDB</span> = ${toOctal(bop, 2)};  <span class="pseudo-cmt">// BARG</span>`,
+        9:  () => `<span class="pseudo-reg">IDB</span> = ByteSwap(<span class="pseudo-reg">IDB</span>);  <span class="pseudo-cmt">// SWAP</span>`,
+        10: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PEA</span>;  <span class="pseudo-cmt">// Parity Error Address</span>`,
+        11: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PES</span>;  <span class="pseudo-cmt">// Parity Error Status</span>`,
+        12: () => `<span class="pseudo-reg">IDB</span> = ${toOctal(aop << 3, 3)};  <span class="pseudo-cmt">// AARG (A-op &lt;&lt; 3)</span>`,
+        13: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PIC_STATUS</span>;`,
+        14: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">UART</span>;  <span class="pseudo-cmt">// I/O Register</span>`,
+        16: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PANEL_STATUS</span>;  <span class="pseudo-cmt">// MIPANS</span>`,
+        17: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PANEL_STATUS</span>;  <span class="pseudo-cmt">// MAPANS (reset read bit)</span>`,
+        18: () => `<span class="pseudo-reg">IDB</span> = SignExt(<span class="pseudo-reg">GPR</span>);  <span class="pseudo-cmt">// GPR sign-extended</span>`,
+        19: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PGS</span>;  <span class="pseudo-cmt">// Paging Status</span>`,
+        20: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">CSR</span>;  <span class="pseudo-cmt">// Cache Status Register</span>`,
+        21: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PCR</span>;  <span class="pseudo-cmt">// Paging Control Register</span>`,
+        22: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">ALD</span>;  <span class="pseudo-cmt">// Auto-Load Descriptor</span>`,
+        23: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PANEL_VECTOR</span>;`,
+        24: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">ControlStore</span>;  <span class="pseudo-cmt">// RCS</span>`,
+        25: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PIC_VECTOR</span>;  <span class="pseudo-cmt">// PICVC</span>`,
+        28: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">LogicalAddress</span>;  <span class="pseudo-cmt">// LA</span>`,
+        29: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">INSTALL_NR</span>;  <span class="pseudo-cmt">// INR</span>`,
+        30: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">PIC_MASK</span>;`,
+        31: () => `<span class="pseudo-reg">IDB</span> = <span class="pseudo-reg">UART_REG</span>;`,
+    };
+    const fn = IDBS_PSEUDO[idbs];
+    return fn ? fn() : `<span class="pseudo-reg">IDB</span> = ${IDBS_NAMES[idbs] || 'source_' + idbs};`;
+}
+
+function pseudoALU(dest, func, src, cin, bop, rasel, rbsel) {
+    if (dest === 1 && func === 0 && src === 0) return ''; // ALUD,NONE + ADD A,Q = NOP
+
+    const srcN = [['RegA','Q'],['RegA','RegB'],['0','Q'],['0','RegB'],['0','RegA'],['IDB','RegA'],['IDB','Q'],['IDB','0']];
+    let [r, s] = srcN[src];
+
+    // Resolve register names for B operand
+    const regB = REG_NAMES[bop] || 'R' + bop;
+    if (s === 'RegB') s = regB;
+    if (r === 'RegB') r = regB;
+
+    // Compute F expression
+    let fExpr;
+    const cinStr = cin === 1 ? ' + 1' : cin === 2 ? ' + C' : cin === 3 ? ' + GPR[0]' : '';
+    switch (func) {
+        case 0: // ADD
+            if (r === '0' && s === '0') fExpr = '0' + cinStr;
+            else if (r === '0') fExpr = s + cinStr;
+            else if (s === '0') fExpr = r + cinStr;
+            else fExpr = r + ' + ' + s + cinStr;
+            break;
+        case 1: fExpr = s + ' - ' + r + cinStr; break; // SUBR
+        case 2: fExpr = r + ' - ' + s + cinStr; break; // SUBS
+        case 3: // OR
+            if (r === '0') fExpr = s; else if (s === '0') fExpr = r; else fExpr = r + ' | ' + s;
+            break;
+        case 4: fExpr = r + ' &amp; ' + s; break; // AND
+        case 5: fExpr = '~' + r + ' &amp; ~' + s; break; // NOTRS
+        case 6: // EXOR
+            if (r === '0') fExpr = s; else if (s === '0') fExpr = r; else fExpr = r + ' ^ ' + s;
+            break;
+        case 7: fExpr = '~(' + r + ' ^ ' + s + ')'; break; // EXNOR
+        default: fExpr = '?';
+    }
+
+    // Trivial pass-through check
+    const isPassThru = (func === 0 || func === 3 || func === 6) && (r === '0' || s === '0') && cinStr === '';
+
+    // Format destination
+    const destNames = ['Q','/* F */','','','SRD','SRB','SLD','SLB'];
+    switch (dest) {
+        case 0: // ALUD,Q
+            return `<span class="pseudo-reg">Q</span> = <span class="pseudo-op">${fExpr}</span>;  <span class="pseudo-cmt">// F -&gt; Q, F -&gt; Y</span>`;
+        case 1: // ALUD,NONE
+            if (isPassThru) return '';
+            return `<span class="pseudo-cmt">// Y = ${fExpr} (no store)</span>`;
+        case 2: // ALUD,B,YA
+            return `<span class="pseudo-reg">${regB}</span> = <span class="pseudo-op">${fExpr}</span>;  <span class="pseudo-cmt">// F -&gt; ${regB}, A -&gt; Y</span>`;
+        case 3: // ALUD,B
+            return `<span class="pseudo-reg">${regB}</span> = <span class="pseudo-op">${fExpr}</span>;`;
+        case 4: // SRD
+            return `<span class="pseudo-reg">${regB}</span>, <span class="pseudo-reg">Q</span> = (<span class="pseudo-op">${fExpr}</span>, Q) &gt;&gt; 1;  <span class="pseudo-cmt">// shift right double</span>`;
+        case 5: // SRB
+            return `<span class="pseudo-reg">${regB}</span> = (<span class="pseudo-op">${fExpr}</span>) &gt;&gt; 1;  <span class="pseudo-cmt">// shift right</span>`;
+        case 6: // SLD
+            return `<span class="pseudo-reg">${regB}</span>, <span class="pseudo-reg">Q</span> = (<span class="pseudo-op">${fExpr}</span>, Q) &lt;&lt; 1;  <span class="pseudo-cmt">// shift left double</span>`;
+        case 7: // SLB
+            return `<span class="pseudo-reg">${regB}</span> = (<span class="pseudo-op">${fExpr}</span>) &lt;&lt; 1;  <span class="pseudo-cmt">// shift left</span>`;
+    }
+    return '';
+}
+
+function pseudoCommand(comm, mis, aop, bop, rasel, rbsel, v) {
+    const regA = REG_NAMES[aop], regB = REG_NAMES[bop];
+    const vk = aop + ',' + bop;
+    const varName = MICRO_VARS[vk];
+    switch (comm) {
+        case 0: return ''; // NONE
+        case 1: return `<span class="pseudo-reg">PIL</span> = IDB[15:8];  <span class="pseudo-cmt">// LDPIL</span>`;
+        case 2: return `<span class="pseudo-reg">GPR</span> = <span class="pseudo-reg">IDB</span>;  <span class="pseudo-cmt">// LDGPR</span>`;
+        case 3: { // EWRF
+            const desc = varName ? varName : `RF[${toOctal(aop,2)},${toOctal(bop,2)}]`;
+            return `<span class="pseudo-reg">${desc}</span> = <span class="pseudo-reg">IDB</span>;  <span class="pseudo-cmt">// EWRF - Write Register File</span>`;
+        }
+        case 4: return `<span class="pseudo-kw">ClearInterruptRequest</span>();  <span class="pseudo-cmt">// CLIRQ</span>`;
+        case 5: { // UART
+            const uartSub = ['UART_DATA','UART_STATUS','UART_MODE = IDB','UART_COMMAND = IDB'];
+            return `<span class="pseudo-reg">${uartSub[mis]}</span>;  <span class="pseudo-cmt">// COMM,UART</span>`;
+        }
+        case 6: { // PANEL
+            const panelSub = ['','','PANEL_CTRL = IDB','PCR = IDB'];
+            return panelSub[mis] ? `<span class="pseudo-reg">${panelSub[mis]}</span>;  <span class="pseudo-cmt">// COMM,PANEL</span>` : '';
+        }
+        case 7: return `<span class="pseudo-kw">SIOC</span>(<span class="pseudo-reg">IDB</span>);  <span class="pseudo-cmt">// Set I/O Control Register</span>`;
+        case 8: return `<span class="pseudo-kw">SLOW_CYCLE</span>();  <span class="pseudo-cmt">// 200ns</span>`;
+        case 9: { // EPIC
+            const picNames = {0:'MCL',2:'MCLPID',5:'RVECT',6:'RSTS',7:'RMSK',9:'LOSTS',11:'LOSTS',12:'MCLMSK',13:'MSTMSK',14:'IOF',15:'ION',16:'LMSK'};
+            return `<span class="pseudo-kw">PIC</span>.${picNames[aop] || aop}();  <span class="pseudo-cmt">// EPIC - Priority Interrupt Command</span>`;
+        }
+        case 10: return `<span class="pseudo-kw">SetMicroPID</span>(<span class="pseudo-reg">IDB</span>);  <span class="pseudo-cmt">// SMPID</span>`;
+        case 11: return `<span class="pseudo-kw">START_CPU</span>();`;
+        case 12: return `<span class="pseudo-kw">STOP_CPU</span>();`;
+        case 13: return `<span class="pseudo-kw">ClearRTC</span>();  <span class="pseudo-cmt">// Clear 20ms clock</span>`;
+        case 14: return `<span class="pseudo-kw">ClearFlags</span>();  <span class="pseudo-cmt">// CLFF - Clear OOD, DZD</span>`;
+        case 15: return `<span class="pseudo-reg">LoopCounter</span> = IDB[5:0];  <span class="pseudo-cmt">// LDLC</span>`;
+        case 16: { // SEGMENT
+            const segSub = ['SegmentReg = IDB','','','IR_Vector = IDB'];
+            return segSub[mis] ? `<span class="pseudo-reg">${segSub[mis]}</span>;  <span class="pseudo-cmt">// SEGMENT</span>` : '';
+        }
+        case 17: { // MEMORY
+            const memSub = ['WriteCacheInhibitMap(IDB)','SetSemaphore()','CacheClear()','LoadExamineMode(IDB)'];
+            return `<span class="pseudo-kw">${memSub[mis]}</span>;  <span class="pseudo-cmt">// MEMORY</span>`;
+        }
+        case 18: { // PAGING
+            const pagSub = ['IDB = PageTable[LogicalIndex]','IDB = AltPageTable[LogicalIndex]','MAP_instruction(IDB)','if (P_unchanged) NEXT'];
+            return `<span class="pseudo-kw">${pagSub[mis]}</span>;  <span class="pseudo-cmt">// PAGING</span>`;
+        }
+        case 19: { // CJUMP1
+            const cjSub = ['if (F15) goto','if (!F15) goto','if (F==0) goto','if (F!=0) goto'];
+            return `<span class="pseudo-kw">${cjSub[mis]}</span> target;  <span class="pseudo-cmt">// CJUMP1</span>`;
+        }
+        case 20: { // CNEXT1
+            const cn1Sub = ['if (SGR) SKIP','if (!SGR) SKIP','if (CRY) SKIP','if (!CRY) SKIP'];
+            return `<span class="pseudo-kw">${cn1Sub[mis]}</span>;  <span class="pseudo-cmt">// CNEXT1</span>`;
+        }
+        case 21: { // CNEXT2
+            const cn2Sub = ['if (F15) SKIP','if (!F15) SKIP','if (F==0) SKIP','if (F!=0) SKIP'];
+            return `<span class="pseudo-kw">${cn2Sub[mis]}</span>;  <span class="pseudo-cmt">// CNEXT2</span>`;
+        }
+        case 22: { // JMP
+            const jmpSub = ['JMP *','JMP ,B','JMP I','JMP ,X'];
+            return `<span class="pseudo-kw">${jmpSub[mis]}</span>;  <span class="pseudo-cmt">// Macro jump</span>`;
+        }
+        case 23: { // JMPX
+            const jxSub = ['JMP ,X,B','JMP I,X','','CONTINUE'];
+            return jxSub[mis] ? `<span class="pseudo-kw">${jxSub[mis]}</span>;  <span class="pseudo-cmt">// Macro ${mis===3?'fetch next instruction':''}</span>` : '';
+        }
+        case 24: { // AREAD1
+            const ar1Sub = ['Memory[P+disp]','Memory[B+disp]','Memory[indirect]','Memory[X+disp]'];
+            return `<span class="pseudo-reg">IDB</span> = <span class="pseudo-kw">${ar1Sub[mis]}</span>;  <span class="pseudo-cmt">// AREAD1</span>`;
+        }
+        case 25: { // AREAD2
+            const ar2Sub = ['Memory[X+B+disp]','Memory[X+1+B+disp]','','Memory[NextAddr]'];
+            return ar2Sub[mis] ? `<span class="pseudo-reg">IDB</span> = <span class="pseudo-kw">${ar2Sub[mis]}</span>;  <span class="pseudo-cmt">// AREAD2</span>` : '';
+        }
+        case 26: { // AWRITE1
+            const aw1Sub = ['Memory[P+disp]','Memory[B+disp]','Memory[indirect]','Memory[X+disp]'];
+            return `<span class="pseudo-kw">${aw1Sub[mis]}</span> = <span class="pseudo-reg">IDB</span>;  <span class="pseudo-cmt">// AWRITE1</span>`;
+        }
+        case 27: { // AWRITE2
+            const aw2Sub = ['Memory[X+B+disp]','Memory[X+1+B+disp]','Memory[HoldAddr]','Memory[NextAddr]'];
+            return `<span class="pseudo-kw">${aw2Sub[mis]}</span> = <span class="pseudo-reg">IDB</span>;  <span class="pseudo-cmt">// AWRITE2</span>`;
+        }
+        case 28: { // READ
+            const rdSub = ['PageTable[addr]','AltPageTable[addr]','HoldRead()','Examine()'];
+            return `<span class="pseudo-reg">IDB</span> = <span class="pseudo-kw">${rdSub[mis]}</span>;  <span class="pseudo-cmt">// READ</span>`;
+        }
+        case 29: { // WRITE
+            const wrSub = ['PageTable[addr]','AltPageTable[addr]','HoldWrite()','Deposit(IDB)'];
+            return `<span class="pseudo-kw">${wrSub[mis]}</span> = <span class="pseudo-reg">IDB</span>;  <span class="pseudo-cmt">// WRITE</span>`;
+        }
+        case 30: { // CONTROL
+            const ctlSub = ['AddressControlStore()','ReadWriteControlStore()','MASTER_CLEAR()','EXTENDED_SLOW()'];
+            return `<span class="pseudo-kw">${ctlSub[mis]}</span>;  <span class="pseudo-cmt">// CONTROL</span>`;
+        }
+        case 31: { // SPECIAL
+            const spSub = ['','','IDENT_bus()','IOX_bus()'];
+            return spSub[mis] ? `<span class="pseudo-kw">${spSub[mis]}</span>;  <span class="pseudo-cmt">// SPECIAL</span>` : '';
+        }
+    }
+    return '';
+}
+
+function pseudoSequence(scond, econd, loop, vect, tseq, tstk, fseq, fstk, tsel, jumpAddr) {
+    const lines = [];
+    const testName = COND_NAMES[tsel] || ('TEST_' + tsel);
+    const jmpTarget = formatPseudoAddr(jumpAddr);
+
+    if (scond) {
+        lines.push(`<span class="pseudo-kw">TestCondition</span> = <span class="pseudo-op">${testName}</span>;  <span class="pseudo-cmt">// SCOND - sample on ALUCLK exit</span>`);
+    }
+
+    if (econd && scond) {
+        lines.push('<span class="pseudo-warn">// WARNING: ECOND + SCOND collision!</span>');
+    }
+
+    if (loop && !econd && !scond) {
+        lines.push(`<span class="pseudo-kw">if</span> (--<span class="pseudo-reg">LoopCounter</span> == 0) <span class="pseudo-kw">RETURN</span>;  <span class="pseudo-cmt">// LCOUNT</span>`);
+        return lines;
+    }
+
+    if (econd) {
+        const trueJumps = tseq === 0;
+        const falseJumps = fseq === 0;
+        const trueStack = tstk !== 0 ? ` Stack.${STK_NAMES[tstk]};` : '';
+        const falseStack = fstk !== 0 ? ` Stack.${STK_NAMES[fstk]};` : '';
+
+        if (trueJumps && !falseJumps) {
+            lines.push(`<span class="pseudo-kw">if</span> (TestCondition) { <span class="pseudo-kw">goto</span> ${jmpTarget};${trueStack} }${falseStack ? ' else {' + falseStack + ' }' : ''}`);
+        } else if (!trueJumps && falseJumps) {
+            lines.push(`<span class="pseudo-kw">if</span> (!TestCondition) { <span class="pseudo-kw">goto</span> ${jmpTarget};${falseStack} }${trueStack ? ' else {' + trueStack + ' }' : ''}`);
+        } else if (trueJumps && falseJumps) {
+            lines.push(`<span class="pseudo-kw">goto</span> ${jmpTarget};  <span class="pseudo-cmt">// unconditional (both paths jump)</span>`);
+        } else {
+            // Neither jumps
+            if (tstk !== 0 || fstk !== 0) {
+                lines.push(`<span class="pseudo-kw">if</span> (TestCondition) {${trueStack} } else {${falseStack} }`);
+            }
+        }
+    } else if (!scond && !loop) {
+        // No conditions at all
+        if (tseq === 0 && vect) {
+            lines.push(`<span class="pseudo-kw">goto</span> ${jmpTarget};  <span class="pseudo-cmt">// vectored (IR bits 0-3)</span>`);
+        } else if (tseq === 0) {
+            lines.push(`<span class="pseudo-kw">goto</span> ${jmpTarget};`);
+        } else if (tseq === 1) {
+            lines.push(`<span class="pseudo-kw">RETURN</span>;`);
+        }
+        // tseq === 2 is NEXT (default, don't show)
+        if (tstk !== 0) {
+            lines.push(`Stack.${STK_NAMES[tstk]};`);
+        }
+    } else if (scond && !econd) {
+        // SCOND only - set up condition, show true/false sequence setup
+        if (tseq !== 2) { // not NEXT
+            lines.push(`<span class="pseudo-cmt">// True path: ${SEQ_NAMES[tseq]}${tstk ? ', ' + STK_NAMES[tstk] : ''}</span>`);
+        }
+        if (fseq !== 2) { // not NEXT
+            lines.push(`<span class="pseudo-cmt">// False path: ${SEQ_NAMES[fseq]}${fstk ? ', ' + STK_NAMES[fstk] : ''}</span>`);
+        }
+        if (tseq === 0) {
+            lines.push(`<span class="pseudo-cmt">// Jump target: ${jmpTarget}</span>`);
+        }
+    }
+
+    return lines;
+}
+
+function formatPseudoAddr(addr) {
+    const label = labelsByAddr[addr];
+    const oct = toOctal(addr, 5);
+    if (label) {
+        return `<span class="pseudo-addr" onclick="jumpToAddr(${addr})">${label}</span> <span class="pseudo-cmt">// ${oct}</span>`;
+    }
+    return `<span class="pseudo-addr" onclick="jumpToAddr(${addr})">${oct}</span>`;
+}
+
+/* =========================================================================
+   OPCODE MAPPING
+   ========================================================================= */
+function getOpcodeInfo(addr) {
+    // ND-100: use the decode-PLA reverse map
+    if (isND100 && nd100OpcodeMap[addr]) {
+        const entries = nd100OpcodeMap[addr];
+        // Pick the first (lowest) macro-opcode as the representative
+        const first = entries[0];
+        return { opcode: first.opcode, name: first.name, allOpcodes: entries };
+    }
+    // ND-110/120: fixed address range 0o6000-0o7777
+    const opBase = getOpcodeForAddr(addr);
+    if (opBase === null) return null;
+    const majorOp = opBase & 0o174000; // bits 15-11
+    const name = OPCODE_NAMES[opBase] || OPCODE_NAMES[majorOp];
+    return { opcode: opBase, name: name || null };
+}
+
+/* =========================================================================
+   DATA LOADING
+   ========================================================================= */
+async function loadMicrocodeData(path) {
+    const resp = await fetch(path + '.CODE');
+    const buf = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+
+    microcodeData = {};
+    const fileInfo = manifest.files.find(f => f.path === path);
+    const nd110Mode = fileInfo && fileInfo.isND110;
+    isND110 = nd110Mode;
+    isND100 = fileInfo && fileInfo.model === 'ND-100';
+
+    // Track the current model for tooltip lookup. The manifest's
+    // `model` field uses "ND-100" / "ND-110" / "ND-120"; we keep a
+    // lowercase-no-dash form matching the TS library's model keys.
+    currentModel = fileInfo?.model === 'ND-100' ? 'nd100'
+                 : fileInfo?.model === 'ND-120' ? 'nd120'
+                 : 'nd110';
+
+    // Load and compile the TS-library disassembler pack for the current
+    // model. All three models (ND-100/110/120) use the TS library.
+    await ensureCurrentModelPack();
+
+    // 10 bytes per record: 2-byte address (LE) + 8-byte microcode (LE)
+    for (let i = 0; i + 9 < bytes.length; i += 10) {
+        const addr = bytes[i] | (bytes[i + 1] << 8);
+        let mc = 0n;
+        for (let j = 0; j < 8; j++) {
+            mc |= BigInt(bytes[i + 2 + j]) << BigInt(j * 8);
+        }
+
+        // ND-110: invert condition control bits 22-27 (token form -> canonical)
+        if (nd110Mode) {
+            mc = mc ^ 0x000000000FC00000n;
+        }
+        // ND-100: invert bits 23-24 only (SCOND + CONDENABL polarity).
+        // Bits 25-27 (VECT0/SLWCS0/MAPJ0) are genuinely active-low
+        // hardware signals — NOT an inversion convention.
+        if (isND100) {
+            mc = mc ^ 0x000000000F800000n;
+        }
+
+        microcodeData[addr] = mc;
+    }
+
+    // ND-100: load the decode-PLA to build macro-opcode -> uaddr mapping.
+    // The PLA is addressed by bits[15:5] of the 16-bit macro instruction,
+    // so macro_opcode = pla_index << 5.
+    nd100OpcodeMap = {};
+    if (isND100) {
+        try {
+            // Derive decode-PLA path from microcode path:
+            //   MC/ND-100-3033S-microcode -> MC/ND-100-3033S-decode
+            //   MC/ND-100-3033E-CX-microcode_ext -> MC/ND-100-3033E-CX-decode
+            const decodePath = path.replace(/-microcode(_ext)?$/, '-decode') + '.CODE';
+            const plaResp = await fetch(decodePath);
+            if (plaResp.ok) {
+                const plaBuf = await plaResp.arrayBuffer();
+                const plaBytes = new Uint8Array(plaBuf);
+                // Parse 10-byte records same as microcode
+                for (let i = 0; i + 9 < plaBytes.length; i += 10) {
+                    const plaIdx = plaBytes[i] | (plaBytes[i + 1] << 8);
+                    let val = 0n;
+                    for (let j = 0; j < 8; j++) {
+                        val |= BigInt(plaBytes[i + 2 + j]) << BigInt(j * 8);
+                    }
+                    const uaddr = Number(val);
+                    const macroOpc = plaIdx << 5;
+                    // Look up mnemonic
+                    const majorOp = macroOpc & 0o174000;
+                    const name = OPCODE_NAMES[macroOpc] || OPCODE_NAMES[majorOp] || null;
+                    if (!nd100OpcodeMap[uaddr]) nd100OpcodeMap[uaddr] = [];
+                    nd100OpcodeMap[uaddr].push({ opcode: macroOpc, name });
+                }
+                // Sort each entry list by opcode
+                for (const arr of Object.values(nd100OpcodeMap)) {
+                    arr.sort((a, b) => a.opcode - b.opcode);
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load ND-100 decode PLA:', e);
+        }
+    }
+}
+
+async function loadLabels(path) {
+    labels = {};
+    labelsByAddr = {};
+    labelMeta = {};
+
+    // Try loading symbol file
+    let symbolPath = path + '.SYMBOLS.TXT';
+    // For RASK, use MC/ND-110-RASK.SYMBOLS.TXT
+    try {
+        const resp = await fetch(symbolPath);
+        if (!resp.ok) return;
+        const text = await resp.text();
+
+        // Parse format: "NNNNNN=LABEL" or "LABEL=NNNNNN"
+        // Also capture "% Lxxxx <- N PLA entries: ..." comment lines
+        // that precede each label (generated by generate-nd100-symbols.mjs).
+        const lines = text.split('\n');
+        let pendingComment = '';
+        for (const line of lines) {
+            // Capture PLA-dispatch comment lines
+            const cm = line.match(/^%\s*(L\d+\s*<-.*)$/);
+            if (cm) {
+                pendingComment = cm[1].trim();
+                continue;
+            }
+
+            const m = line.match(/^(\d{6})=(\S+)/);
+            if (m) {
+                const addr = parseInt(m[1], 8);
+                const name = m[2].trim();
+                labels[name] = addr;
+                labelsByAddr[addr] = name;
+                if (pendingComment) {
+                    labelMeta[addr] = pendingComment;
+                    pendingComment = '';
+                }
+                continue;
+            }
+            const m2 = line.match(/^(\S+)=(\d{6})/);
+            if (m2) {
+                const name = m2[1].trim();
+                const addr = parseInt(m2[2], 8);
+                labels[name] = addr;
+                labelsByAddr[addr] = name;
+                if (pendingComment) {
+                    labelMeta[addr] = pendingComment;
+                    pendingComment = '';
+                }
+            }
+        }
+    } catch (e) {
+        // No labels available
+    }
+}
+
+/* =========================================================================
+   DISASSEMBLE ALL
+   ========================================================================= */
+function disassembleAll() {
+    disassembled = [];
+
+    // Get all addresses and sort
+    const addrs = Object.keys(microcodeData).map(Number).sort((a, b) => a - b);
+
+    for (const addr of addrs) {
+        const raw = microcodeData[addr];
+        const hex = '0x' + raw.toString(16).padStart(16, '0').toUpperCase();
+        const label = labelsByAddr[addr] || '';
+        const tokens = disassembleTS(raw, addr);
+        disassembled.push({ addr, hex, raw, label, tokens });
+    }
+
+    applyFilter();
+}
+
+function applyFilter() {
+    const hideEmpty = document.getElementById('hideEmpty').checked;
+    if (hideEmpty) {
+        filteredList = disassembled.filter(d => d.raw !== 0n);
+    } else {
+        filteredList = disassembled;
+    }
+    currentPage = 0;
+    renderListing();
+}
+
+/* =========================================================================
+   RENDERING
+   ========================================================================= */
+function renderListing() {
+    const container = document.getElementById('listingContent');
+    const start = currentPage * PAGE_SIZE;
+    const end = Math.min(start + PAGE_SIZE, filteredList.length);
+    const page = filteredList.slice(start, end);
+    const isPseudo = viewMode === 'pseudo';
+
+    let html = '';
+    let instrIdx = 0;
+    for (const item of page) {
+        const active = item.addr === selectedAddr ? ' active' : '';
+        const hasLabel = item.label ? ' has-label' : '';
+        const groupClass = ` listing-group-${instrIdx % 2 === 0 ? 'even' : 'odd'}`;
+
+        let labelHtml = '';
+        if (item.label) {
+            const meta = labelMeta[item.addr];
+            const tip = meta ? ` title="${escHtml(meta)}"` : '';
+            labelHtml = `<span class="listing-label"${tip}>${escHtml(item.label)}:</span>`;
+        }
+
+        // Opcode badge for addresses that are macroinstruction entry points
+        let opcodeBadge = '';
+        if (showOpcodes) {
+            const opcInfo = getOpcodeInfo(item.addr);
+            if (opcInfo) {
+                const opcOctal = toOctal(opcInfo.opcode, 6);
+                const name = opcInfo.name ? ` ${opcInfo.name}` : '';
+                let tip = `Macroinstruction entry: opcode ${opcOctal}${name}`;
+                if (opcInfo.allOpcodes && opcInfo.allOpcodes.length > 1) {
+                    const unique = [...new Set(opcInfo.allOpcodes.map(e => e.name).filter(Boolean))];
+                    tip += ` (+${opcInfo.allOpcodes.length - 1} more: ${unique.join(', ')})`;
+                }
+                opcodeBadge = `<span class="opcode-badge" title="${escHtml(tip)}">${opcOctal}${name}</span>`;
+            }
+        }
+
+        let contentHtml;
+        if (isPseudo) {
+            const pseudo = generatePseudo(item.raw, item.addr);
+            contentHtml = `<span class="listing-pseudo">${pseudo}</span>`;
+        } else {
+            let asmHtml = '';
+            let prevLine = 0;
+            for (let ti = 0; ti < item.tokens.length; ti++) {
+                const t = item.tokens[ti];
+
+                // In 3-line mode, skip separators at line boundaries and
+                // insert a visual line break instead.
+                if (multiLineMode && t.line && t.line !== prevLine && prevLine !== 0) {
+                    asmHtml += `<span class="asm-line-break"></span>`;
+                }
+                if (t.line) prevLine = t.line;
+
+                // Skip separator tokens that sit right before a line change
+                if (multiLineMode && t.css === 'field-sep' && t.text.trim() === '') {
+                    const next = item.tokens[ti + 1];
+                    if (next && next.line && next.line !== prevLine) continue;
+                }
+
+                if (t.css === 'field-addr' && t.field === 'ADDR') {
+                    asmHtml += `<span class="${t.css} field-token" data-field="${t.field}" data-addr="${parseInt(t.text, 8)}" onclick="jumpToAddr(${parseInt(t.text, 8)})">${escHtml(t.text)}</span>`;
+                } else if (t.field === 'LABEL' && (labels[t.text] !== undefined || t.jumpAddr !== undefined)) {
+                    const targetAddr = t.jumpAddr !== undefined ? t.jumpAddr : labels[t.text];
+                    asmHtml += `<span class="field-addr field-token" data-field="ADDR" data-addr="${targetAddr}" onclick="jumpToAddr(${targetAddr})" style="cursor:pointer">${escHtml(t.text)}</span>`;
+                } else {
+                    asmHtml += `<span class="${t.css} field-token" data-field="${t.field}">${escHtml(t.text)}</span>`;
+                }
+            }
+            contentHtml = `<span class="listing-asm">${asmHtml}</span>`;
+        }
+
+        html += `<div class="listing-row${active}${hasLabel}${groupClass}" data-addr="${item.addr}" onclick="selectInstruction(${item.addr})">`;
+        if (item.label) {
+            html += `<div style="width:100%">${opcodeBadge}${labelHtml}</div></div>`;
+            html += `<div class="listing-row${active}${groupClass}" data-addr="${item.addr}" onclick="selectInstruction(${item.addr})">`;
+        }
+        html += `<span class="listing-addr">${toOctal(item.addr, 5)}</span>`;
+        if (!isPseudo) html += `<span class="listing-hex">${item.hex}</span>`;
+        if (!item.label && opcodeBadge) html += opcodeBadge;
+        html += contentHtml;
+        html += `</div>`;
+        instrIdx++;
+    }
+
+    container.innerHTML = html;
+
+    // Update footer
+    const totalPages = Math.ceil(filteredList.length / PAGE_SIZE);
+    document.getElementById('pageInfo').textContent = `Page ${currentPage + 1}/${totalPages}`;
+    document.getElementById('prevPage').disabled = currentPage === 0;
+    document.getElementById('nextPage').disabled = currentPage >= totalPages - 1;
+    document.getElementById('statusText').textContent =
+        `${filteredList.length} instructions (${Object.keys(labels).length} labels)`;
+}
+
+function selectInstruction(addr) {
+    selectedAddr = addr;
+
+    // Update active row
+    document.querySelectorAll('.listing-row').forEach(r => r.classList.remove('active'));
+    document.querySelectorAll(`.listing-row[data-addr="${addr}"]`).forEach(r => r.classList.add('active'));
+
+    // Show detail panel
+    const item = disassembled.find(d => d.addr === addr);
+    if (!item) return;
+
+    document.getElementById('detailPlaceholder').style.display = 'none';
+    document.getElementById('detailContent').style.display = 'block';
+
+    renderDetail(item);
+}
+
+function renderDetail(item) {
+    const v = item.raw;
+
+    // Hex bar
+    let hexBarHtml = `<div><strong>${toOctal(item.addr, 5)}</strong>`;
+    if (item.label) hexBarHtml += ` <span style="color:var(--accent)">${escHtml(item.label)}</span>`;
+    const meta = labelMeta[item.addr];
+    if (meta) hexBarHtml += `<div style="font-size:0.85em;opacity:0.7;margin-top:2px">${escHtml(meta)}</div>`;
+    hexBarHtml += `</div><div class="hex-bar">`;
+
+    // Show 8 bytes
+    for (let i = 7; i >= 0; i--) {
+        const b = Number((v >> BigInt(i * 8)) & 0xFFn);
+        hexBarHtml += `<span class="hex-byte">${b.toString(16).padStart(2, '0').toUpperCase()}</span>`;
+    }
+    hexBarHtml += '</div>';
+    document.getElementById('detailHeader').innerHTML = hexBarHtml;
+
+    // Field breakdown
+    let fieldsHtml = '';
+
+    const groups = [
+        { name: 'ALU Control', fields: ['ALUD','ALUF','ALUS'] },
+        { name: 'Register / Status', fields: ['STS','RASEL','RBSEL','CIN','ALUM'] },
+        { name: 'Control', fields: ['MIS','IDBS','COMM'] },
+        { name: 'Sequencing', fields: ['TSEQ','TSTK','VECT','SCOND','ECOND','LOOP','DELAY','CSBIT20'] },
+        { name: 'Operands', fields: ['BOP','AOP'] },
+        { name: 'Condition / Address', fields: ['LCC','TSEL','FSEQ','FSTK'] },
+    ];
+
+    for (const grp of groups) {
+        fieldsHtml += `<div class="field-group">`;
+        fieldsHtml += `<div class="field-group-title">${grp.name}</div>`;
+
+        for (const fName of grp.fields) {
+            const f = FIELDS[fName];
+            const val = extractField(v, f.hi, f.lo);
+            const mnemonic = getFieldMnemonic(fName, val, v);
+
+            fieldsHtml += `<div class="field-entry">`;
+            fieldsHtml += `<span class="field-name">${f.name} [${f.hi}${f.hi !== f.lo ? '-' + f.lo : ''}]</span>`;
+            fieldsHtml += `<span><span class="field-value">${toOctal(val)}</span>`;
+            if (mnemonic) {
+                fieldsHtml += `<span class="field-mnemonic">${escHtml(mnemonic)}</span>`;
+            }
+            fieldsHtml += `</span></div>`;
+
+            // Bit boxes for this field
+            fieldsHtml += `<div class="bit-row">`;
+            for (let b = f.hi; b >= f.lo; b--) {
+                const bit = Number((v >> BigInt(b)) & 1n);
+                fieldsHtml += `<span class="bit-box ${bit ? 'on' : 'off'}" title="Bit ${b}">${bit}</span>`;
+            }
+            fieldsHtml += `</div>`;
+        }
+        fieldsHtml += `</div>`;
+    }
+
+    // Jump address calculation (only valid when SCOND=0)
+    const csbit11_0 = extractField(v, 11, 0);
+    const csbit20val = extractField(v, 20, 20);
+    const scondVal = extractField(v, 24, 24);
+    const jumpAddr = (csbit20val ? 0x1000 : 0) | (((csbit11_0 >> 4) & 0xFF) << 4) | (csbit11_0 & 0xF);
+
+    if (scondVal === 0) {
+        fieldsHtml += `<div class="field-group">`;
+        fieldsHtml += `<div class="field-group-title">Calculated Jump Address</div>`;
+        fieldsHtml += `<div class="field-entry">`;
+        fieldsHtml += `<span class="field-name">CSBIT[11:0]</span>`;
+        fieldsHtml += `<span class="field-value">${toOctal(csbit11_0, 4)}</span>`;
+        fieldsHtml += `</div>`;
+        fieldsHtml += `<div class="field-entry">`;
+        fieldsHtml += `<span class="field-name">Target</span>`;
+        fieldsHtml += `<span class="field-value field-addr" onclick="jumpToAddr(${jumpAddr})" style="cursor:pointer">${toOctal(jumpAddr, 5)}</span>`;
+        if (labelsByAddr[jumpAddr]) {
+            fieldsHtml += `<span class="field-mnemonic">${escHtml(labelsByAddr[jumpAddr])}</span>`;
+        }
+        const targetMeta = labelMeta[jumpAddr];
+        if (targetMeta) {
+            fieldsHtml += `<div style="font-size:0.85em;opacity:0.7;margin-top:2px">${escHtml(targetMeta)}</div>`;
+        }
+        fieldsHtml += `</div></div>`;
+    } else {
+        fieldsHtml += `<div class="field-group">`;
+        fieldsHtml += `<div class="field-group-title">SCOND Active - Bits 11-0 = Condition Fields</div>`;
+        const lccVal = extractField(v, 11, 8);
+        const tselVal = extractField(v, 7, 4);
+        const fseqVal = extractField(v, 3, 2);
+        const fstkVal = extractField(v, 1, 0);
+        fieldsHtml += `<div class="field-entry"><span class="field-name">LCC [11-8]</span><span class="field-value">${toOctal(lccVal)}</span></div>`;
+        fieldsHtml += `<div class="field-entry"><span class="field-name">TSEL [7-4]</span><span class="field-value">${toOctal(tselVal)}<span class="field-mnemonic">${COND_NAMES[tselVal] || '?'}</span></span></div>`;
+        fieldsHtml += `<div class="field-entry"><span class="field-name">F.SEQ [3-2]</span><span class="field-value">${fseqVal}<span class="field-mnemonic">${SEQ_NAMES[fseqVal]}</span></span></div>`;
+        fieldsHtml += `<div class="field-entry"><span class="field-name">F.STK [1-0]</span><span class="field-value">${fstkVal}<span class="field-mnemonic">${STK_NAMES[fstkVal]}</span></span></div>`;
+        fieldsHtml += `</div>`;
+    }
+
+    // ARG value when relevant
+    const idbs = extractField(v, 41, 37);
+    if (idbs === 4) {
+        const argVal = extractField(v, 15, 0);
+        fieldsHtml += `<div class="field-group">`;
+        fieldsHtml += `<div class="field-group-title">Argument Value</div>`;
+        fieldsHtml += `<div class="field-entry">`;
+        fieldsHtml += `<span class="field-name">ARG [15-0]</span>`;
+        fieldsHtml += `<span class="field-value">${toOctal(argVal, 6)} (0x${argVal.toString(16).padStart(4,'0').toUpperCase()})</span>`;
+        fieldsHtml += `</div></div>`;
+    }
+
+    document.getElementById('detailFields').innerHTML = fieldsHtml;
+}
+
+function getFieldMnemonic(fieldName, val, raw) {
+    switch (fieldName) {
+        case 'ALUD': return ALU_DEST[val] + ' - ' + ALU_DEST_DESC[val];
+        case 'ALUF': return ALU_FUNC[val] + ' - ' + ALU_FUNC_DESC[val];
+        case 'ALUS': return ALU_SRC[val] + ' - ' + ALU_SRC_DESC[val];
+        case 'STS':  return STS_OP[val] + ' - ' + STS_OP_DESC[val];
+        case 'RASEL': return RASEL_NAMES[val];
+        case 'RBSEL': return RBSEL_NAMES[val];
+        case 'CIN':  return CIN_NAMES[val] + ' - ' + CIN_DESC[val];
+        case 'ALUM': return ALUM_NAMES[val] + ' - ' + ALUM_DESC[val];
+        case 'MIS':  return MIS_NAMES[val] + ' - ' + MIS_DESC_SHIFT[val];
+        case 'IDBS': return (IDBS_NAMES[val] || '?') + ' - ' + (IDBS_DESC[val] || '?');
+        case 'COMM': {
+            const mis = extractField(BigInt(raw), 43, 42);
+            const sub = COMM_MIS[val];
+            if (sub) return COMM_NAMES[val] + ',' + sub[mis];
+            return COMM_NAMES[val];
+        }
+        case 'TSEQ': return SEQ_NAMES[val];
+        case 'TSTK': return STK_NAMES[val];
+        case 'FSEQ': return SEQ_NAMES[val];
+        case 'FSTK': return STK_NAMES[val];
+        case 'VECT': return val ? 'Vectored' : 'Normal';
+        case 'SCOND': return val ? 'Set condition' : 'No';
+        case 'ECOND': return val ? 'Enable cond' : 'No';
+        case 'LOOP':  return val ? 'Loop active' : 'No';
+        case 'DELAY': return val ? 'Delayed' : 'No';
+        case 'CSBIT20': return val ? 'Addr bit 12=1' : 'Addr bit 12=0';
+        case 'AOP': return REG_NAMES[val] + ' (' + toOctal(val, 2) + ')';
+        case 'BOP': return REG_NAMES[val] + ' (' + toOctal(val, 2) + ')';
+        case 'LCC': return 'Loop Counter Compare = ' + toOctal(val);
+        case 'TSEL': return val < COND_NAMES.length ? COND_NAMES[val] : toOctal(val);
+        default: return '';
+    }
+}
+
+/* =========================================================================
+   NAVIGATION
+   ========================================================================= */
+function jumpToAddr(addr) {
+    // Find index in filtered list
+    const idx = filteredList.findIndex(d => d.addr >= addr);
+    if (idx < 0) return;
+
+    currentPage = Math.floor(idx / PAGE_SIZE);
+    renderListing();
+    selectInstruction(filteredList[idx].addr);
+
+    // Scroll to row
+    setTimeout(() => {
+        const row = document.querySelector(`.listing-row[data-addr="${filteredList[idx].addr}"]`);
+        if (row) row.scrollIntoView({ block: 'center' });
+    }, 50);
+}
+
+function searchLabel(query) {
+    query = query.trim().toUpperCase();
+    if (!query) return;
+
+    // Try as octal address first
+    if (/^[0-7]+$/.test(query)) {
+        jumpToAddr(parseInt(query, 8));
+        return;
+    }
+
+    // Search labels
+    for (const [name, addr] of Object.entries(labels)) {
+        if (name.toUpperCase().includes(query)) {
+            jumpToAddr(addr);
+            return;
+        }
+    }
+}
+
+/* =========================================================================
+   EXPORT
+   ========================================================================= */
+function exportText() {
+    let text = 'ND-120 Microcode Disassembly\n';
+    text += '=' .repeat(80) + '\n\n';
+
+    for (const item of disassembled) {
+        if (item.label) {
+            text += '\n' + item.label + ':\n';
+        }
+        const asm = item.tokens.map(t => t.text).join('');
+        text += `${toOctal(item.addr, 5)}  ${item.hex}  ${asm}\n`;
+    }
+
+    downloadFile('nd120-microcode.txt', text, 'text/plain');
+    document.getElementById('exportDropdown').classList.remove('show');
+}
+
+function exportMarkdown() {
+    let md = '# ND-120 Microcode Disassembly\n\n';
+    md += '| Address | Hex | Label | Disassembly |\n';
+    md += '|---------|-----|-------|-------------|\n';
+
+    for (const item of disassembled) {
+        const asm = item.tokens.map(t => t.text).join('');
+        md += `| ${toOctal(item.addr, 5)} | ${item.hex} | ${item.label} | ${asm} |\n`;
+    }
+
+    downloadFile('nd120-microcode.md', md, 'text/markdown');
+    document.getElementById('exportDropdown').classList.remove('show');
+}
+
+function downloadFile(filename, content, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+/* =========================================================================
+   UTILITIES
+   ========================================================================= */
+function escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* =========================================================================
+   TOOLTIP SYSTEM
+   ========================================================================= */
+const tooltipEl = document.getElementById('tooltip');
+let tooltipTimeout = null;
+
+document.addEventListener('mouseover', (e) => {
+    const token = e.target.closest('.field-token');
+    if (!token) return;
+
+    const field = token.dataset.field;
+    if (!field) return;
+
+    const tip = getTooltip(field, token.textContent);
+    if (!tip) return;
+
+    clearTimeout(tooltipTimeout);
+    tooltipTimeout = setTimeout(() => {
+        tooltipEl.innerHTML = tip;
+        tooltipEl.style.display = 'block';
+        positionTooltip(e);
+    }, 300);
+});
+
+document.addEventListener('mouseout', (e) => {
+    const token = e.target.closest('.field-token');
+    if (token) {
+        clearTimeout(tooltipTimeout);
+        tooltipEl.style.display = 'none';
+    }
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (tooltipEl.style.display === 'block') {
+        positionTooltip(e);
+    }
+});
+
+function positionTooltip(e) {
+    let x = e.clientX + 12;
+    let y = e.clientY + 12;
+    if (x + 400 > window.innerWidth) x = e.clientX - 400;
+    if (y + 100 > window.innerHeight) y = e.clientY - 100;
+    tooltipEl.style.left = x + 'px';
+    tooltipEl.style.top = y + 'px';
+}
+
+function getTooltip(field, text) {
+    // Try the YAML token database first for whichever model is loaded.
+    // For ND-100 we use the nd100 pack (which has the full 296-token
+    // list). For ND-110/ND-120 we use their respective packs when
+    // loaded. Each pack's tokens[] provides the authoritative
+    // per-token description from the validated metadata YAML.
+    const pack = packs[currentModel] ?? nd100Pack;
+    if (pack && text) {
+        const trimmed = text.trim();
+        const tok = pack.tokensByName.get(trimmed);
+        if (tok) {
+            const category = tok.category ? ` <em>(${escHtml(tok.category)})</em>` : '';
+            const description = tok.description ? escHtml(tok.description) : '(no description)';
+            let reference = '';
+            if (tok.encodingOctal) {
+                const [w4, w3, w2, w1] = tok.encodingOctal;
+                reference = `<br><code style="font-size:10px;opacity:0.7">encoding: w4=${w4} w3=${w3} w2=${w2} w1=${w1}</code>`;
+            }
+            const modelBadge = ` <span style="font-size:10px;opacity:0.6">[${currentModel}]</span>`;
+            return `<strong>${escHtml(trimmed)}</strong>${category}${modelBadge}<br>${description}${reference}`;
+        }
+    }
+
+    switch (field) {
+        case 'ALUF': return '<strong>ALU Function + Source</strong><br>AM2901 ALU instruction bits I0-I5';
+        case 'ALUD': {
+            const idx = ALU_DEST.indexOf(text);
+            if (idx >= 0) return `<strong>${ALU_DEST[idx]}</strong><br>${ALU_DEST_DESC[idx]}<br>Bits 63-61`;
+            return null;
+        }
+        case 'STS': return `<strong>Status Operation</strong><br>${text}<br>Bits 54-53`;
+        case 'CIN': {
+            const idx = CIN_NAMES.indexOf(text);
+            if (idx >= 0) return `<strong>${CIN_NAMES[idx]}</strong><br>${CIN_DESC[idx]}<br>Bits 47-46`;
+            return null;
+        }
+        case 'ALUM': {
+            const idx = ALUM_NAMES.indexOf(text);
+            if (idx >= 0) return `<strong>${ALUM_NAMES[idx]}</strong><br>${ALUM_DESC[idx]}<br>Bits 45-44`;
+            return null;
+        }
+        case 'MIS': return `<strong>Miscellaneous Control</strong><br>${text}<br>Bits 43-42`;
+        case 'RASEL': return `<strong>Register A Source Selection</strong><br>${text}<br>Bits 52-50`;
+        case 'RBSEL': return `<strong>Register B Source Selection</strong><br>${text}<br>Bits 49-48`;
+        case 'AOP': return `<strong>A Operand</strong><br>${text}<br>Bits 15-12 (register select)`;
+        case 'BOP': return `<strong>B Operand</strong><br>${text}<br>Bits 19-16 (register select)`;
+        case 'IDBS': {
+            const idx = IDBS_NAMES.indexOf(text);
+            if (idx >= 0) return `<strong>${IDBS_NAMES[idx]}</strong><br>${IDBS_DESC[idx]}<br>Bits 41-37`;
+            return `<strong>IDB Source</strong><br>${text}<br>Bits 41-37`;
+        }
+        case 'COMM': return `<strong>Command</strong><br>${text}<br>Bits 36-32 + MIS 43-42`;
+        case 'PIC': return `<strong>PIC Command</strong><br>${text}<br>Priority Interrupt Controller command via A-operand`;
+        case 'TSEQ': return `<strong>True Sequence Control</strong><br>${text}<br>Bits 31-30`;
+        case 'TSTK': return `<strong>True Stack Operation</strong><br>${text}<br>Bits 29-28`;
+        case 'FSEQ': return `<strong>False Sequence Control</strong><br>${text}<br>Bits 3-2 (active when SCOND=1)`;
+        case 'FSTK': return `<strong>False Stack Operation</strong><br>${text}<br>Bits 1-0 (active when SCOND=1)`;
+        case 'COND': return `<strong>Condition Test</strong><br>${text}<br>Bits 7-4 (test object select)`;
+        case 'ECOND': return `<strong>Enable Condition</strong><br>Enable conditional sequencing<br>Bit 23`;
+        case 'LOOP': return `<strong>Loop Counter</strong><br>Count loop counter, if zero: return + hold<br>Bit 22`;
+        case 'ADDR': return `<strong>Jump Target Address</strong><br>Octal: ${text}<br>Click to navigate`;
+        case 'LABEL': return `<strong>Label</strong><br>${text}`;
+        case 'VAR': return `<strong>Microcode Variable</strong><br>${text}<br>Register file scratch word`;
+        case 'ARG': return `<strong>Argument Value</strong><br>Octal: ${text}<br>Immediate value from bits 15-0`;
+        case 'DELAY': return `<strong>Delay</strong><br>Extra microcycle delay<br>Bit 21`;
+        default: return null;
+    }
+}
+
+/* =========================================================================
+   TS-LIBRARY BRIDGE - per-model disassembler packs + tooltip lookup
+   =========================================================================
+   The in-page `disassemble()` function decodes ND-110/ND-120 microwords
+   using the field layout hard-coded above. ND-100 has small but critical
+   differences (TC at 20-21 instead of BIT20/DELAY; active-low VECT0/
+   SLWCS0/MAPJ0 at 25-27 instead of VECT/DLY0/DLY1; 4-bit IDBS + separate
+   SEXT at bit 41; role-aware MIS). We delegate ND-100 disassembly to the
+   bundled TS library at dist/nd100uc.mjs, which has a dedicated ND-100
+   decoder.
+
+   We ALSO load the ND-110 and ND-120 token YAMLs so that hover tooltips
+   can show the authoritative per-token description from the validated
+   metadata (even when disassembly itself is still done by the in-page
+   ND-110 decoder). This gives consistent tooltip UX across all three
+   CPU families.
+   ========================================================================= */
+let ndLib = null;
+// packs[model] = DefinitionPack once loaded. Disassembler packs only
+// exist for ND-100 (we only use the TS disassembler for that model).
+const packs = { nd100: null, nd110: null, nd120: null };
+let nd100Pack = null;    // mirrors packs.nd100; used as the primary label source
+let nd100Dpack = null;
+let currentDpack = null; // compiled disassembler pack for the currently-loaded model
+
+async function loadPack(model) {
+    if (packs[model]) return packs[model];
+    ndLib ??= await import('./dist/nd100uc.mjs');
+    const tokensFile = `defs/tokens/${model}-tokens.yaml`;
+    const fieldsFile = `defs/fields/${model}-fields.yaml`;
+    const [tokensText, modelFieldsText, nd110FieldsText] = await Promise.all([
+        fetch(tokensFile).then(r => r.ok ? r.text() : Promise.reject()),
+        fetch(fieldsFile).then(r => r.ok ? r.text() : null).catch(() => null),
+        model === 'nd110'
+            ? Promise.resolve(null)
+            : fetch('defs/fields/nd110-fields.yaml').then(r => r.text()),
+    ]);
+    const tokens = ndLib.parseTokensYaml(tokensText);
+    // ND-100 and ND-120 extend ND-110 base fields with overrides.
+    const fields = (model === 'nd110')
+        ? ndLib.parseFieldsYaml(modelFieldsText ?? '')
+        : ndLib.parseFieldsYaml(nd110FieldsText);
+    if (model !== 'nd110' && modelFieldsText) {
+        const overrides = ndLib.parseFieldsYaml(modelFieldsText);
+        for (const [name, def] of overrides) fields.set(name, def);
+    }
+    packs[model] = ndLib.buildDefinitionPack(model, tokens, fields);
+    return packs[model];
+}
+
+async function initNd100Engine() {
+    if (nd100Dpack) return;
+    nd100Pack = await loadPack('nd100');
+    nd100Dpack = ndLib.compileDisassemblerPack(nd100Pack);
+}
+
+// Currently-loaded model in lowercase form ("nd100" | "nd110" | "nd120").
+// Set when a file is selected; drives which pack the tooltip consults.
+let currentModel = 'nd110';
+
+// Ensure the pack for the current model is loaded and compiled for
+// disassembly. Called from loadMicrocodeData before disassembleAll().
+async function ensureCurrentModelPack() {
+    try {
+        const pack = await loadPack(currentModel);
+        ndLib ??= await import('./dist/nd100uc.mjs');
+        currentDpack = ndLib.compileDisassemblerPack(pack);
+        if (currentModel === 'nd100') {
+            nd100Pack = pack;
+            nd100Dpack = currentDpack;
+        }
+    } catch (e) {
+        console.warn(`No YAML metadata for ${currentModel}:`, e);
+        currentDpack = null;
+    }
+}
+
+// Map EmittedToken.field -> CSS class used by the existing renderer.
+const ND100_FIELD_TO_CSS = {
+    A_REG: 'field-src',    B_REG: 'field-src',    AB_REG: 'field-src',
+    PIC: 'field-src',
+    ALUF: 'field-alu',     ALUD: 'field-dest',    ALUM: 'field-misc',
+    STS: 'field-misc',     CRY: 'field-misc',
+    IDBS: 'field-idbs',    COMM: 'field-cmd',
+    T_SEQ: 'field-seq',    T_STK: 'field-seq',
+    F_SEQ: 'field-seq',    F_STK: 'field-seq',
+    COND: 'field-cond',    MIS: 'field-misc',
+    SPECIAL: 'field-misc', BRANCH: 'field-addr',  COMMENT: 'field-sep',
+};
+
+function disassembleTS(raw, addr) {
+    const syms = labelsByAddr
+        ? new Map(Object.entries(labelsByAddr).map(([a, n]) => [Number(a), n]))
+        : undefined;
+    const d = currentDpack
+        ? ndLib.disassembleWord(raw, addr, currentDpack, syms)
+        : null;
+    if (!d) return [];
+
+    // Group tokens by display line and emit them with line separators so
+    // the renderer shows the 3-line layout consistent with RASK.
+    const byLine = { 1: [], 2: [], 3: [] };
+    for (const t of d.tokens) {
+        const line = byLine[t.line] ?? byLine[1];
+        line.push(t);
+    }
+
+    const out = [];
+    let lastLine = 0;
+    const push = (text, field, css, line) => out.push({ text, field: field || '', css: css || '', line: line || 1 });
+
+    let emittedLine = false;
+    for (const lineNum of [1, 2, 3]) {
+        const lineTokens = byLine[lineNum];
+        if (!lineTokens || lineTokens.length === 0) continue;
+        for (let i = 0; i < lineTokens.length; i++) {
+            const t = lineTokens[i];
+            if (t.field === 'BRANCH') {
+                const isOctal = /^[0-7]+$/.test(t.text);
+                if (isOctal) {
+                    push(t.text, 'ADDR', 'field-addr', lineNum);
+                } else {
+                    push(t.text, 'LABEL', 'field-label', lineNum);
+                }
+            } else {
+                const css = ND100_FIELD_TO_CSS[t.field] ?? 'field-misc';
+                push(t.text, t.field, css, lineNum);
+            }
+            if (i < lineTokens.length - 1) push(' ', '', 'field-sep', lineNum);
+        }
+        lastLine = lineNum;
+        emittedLine = true;
+    }
+    push(';', '', 'field-sep', lastLine || 1);
+    return out;
+}
+
+// Set when the currently-loaded file is ND-100 microcode.
+let isND100 = false;
+
+/* =========================================================================
+   INITIALIZATION
+   ========================================================================= */
+let manifest = null;
+
+async function init() {
+    // Load manifest
+    try {
+        const resp = await fetch('MC/manifest.json');
+        manifest = await resp.json();
+    } catch (e) {
+        document.getElementById('statusText').textContent = 'Error: Could not load manifest.json';
+        return;
+    }
+
+    // Populate file selector
+    const sel = document.getElementById('fileSelect');
+    for (const f of manifest.files) {
+        const opt = document.createElement('option');
+        opt.value = f.path;
+        opt.textContent = f.name;
+        sel.appendChild(opt);
+    }
+    sel.value = manifest.default;
+
+    // Load default file
+    await loadFile(manifest.default);
+
+    // Event listeners
+    sel.addEventListener('change', async () => {
+        await loadFile(sel.value);
+    });
+
+    document.getElementById('goBtn').addEventListener('click', () => {
+        const val = document.getElementById('addrInput').value.trim();
+        if (val) jumpToAddr(parseInt(val, 8));
+    });
+
+    document.getElementById('addrInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('goBtn').click();
+    });
+
+    document.getElementById('searchBtn').addEventListener('click', () => {
+        searchLabel(document.getElementById('searchInput').value);
+    });
+
+    document.getElementById('searchInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('searchBtn').click();
+    });
+
+    document.getElementById('hideEmpty').addEventListener('change', () => applyFilter());
+
+    document.getElementById('showOpcodes').addEventListener('change', (e) => {
+        showOpcodes = e.target.checked;
+        renderListing();
+    });
+
+    document.getElementById('multiLine').addEventListener('change', (e) => {
+        multiLineMode = e.target.checked;
+        renderListing();
+    });
+
+    document.getElementById('viewAsm').addEventListener('click', () => {
+        viewMode = 'asm';
+        document.getElementById('viewAsm').classList.add('active');
+        document.getElementById('viewPseudo').classList.remove('active');
+        renderListing();
+    });
+
+    document.getElementById('viewPseudo').addEventListener('click', () => {
+        viewMode = 'pseudo';
+        document.getElementById('viewPseudo').classList.add('active');
+        document.getElementById('viewAsm').classList.remove('active');
+        renderListing();
+    });
+
+    document.getElementById('prevPage').addEventListener('click', () => {
+        if (currentPage > 0) { currentPage--; renderListing(); }
+    });
+
+    document.getElementById('nextPage').addEventListener('click', () => {
+        const totalPages = Math.ceil(filteredList.length / PAGE_SIZE);
+        if (currentPage < totalPages - 1) { currentPage++; renderListing(); }
+    });
+
+    document.getElementById('themeBtn').addEventListener('click', () => {
+        document.body.classList.toggle('dark-theme');
+    });
+
+    document.getElementById('refBtn').addEventListener('click', () => {
+        document.getElementById('refModal').style.display = 'block';
+    });
+
+    document.getElementById('refModal').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('refModal')) {
+            document.getElementById('refModal').style.display = 'none';
+        }
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+        document.getElementById('exportDropdown').classList.toggle('show');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.export-menu')) {
+            document.getElementById('exportDropdown').classList.remove('show');
+        }
+    });
+
+    document.getElementById('togglePanel').addEventListener('click', () => {
+        document.getElementById('detailPanel').classList.toggle('visible');
+    });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateRow(e.key === 'ArrowDown' ? 1 : -1);
+        }
+    });
+}
+
+function navigateRow(delta) {
+    const idx = filteredList.findIndex(d => d.addr === selectedAddr);
+    const newIdx = Math.max(0, Math.min(filteredList.length - 1, idx + delta));
+    if (newIdx === idx) return;
+
+    const newPage = Math.floor(newIdx / PAGE_SIZE);
+    if (newPage !== currentPage) {
+        currentPage = newPage;
+        renderListing();
+    }
+    selectInstruction(filteredList[newIdx].addr);
+
+    const row = document.querySelector(`.listing-row[data-addr="${filteredList[newIdx].addr}"]`);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+async function loadFile(path) {
+    currentFile = path;
+    document.getElementById('statusText').textContent = 'Loading...';
+
+    try {
+        await loadMicrocodeData(path);
+        await loadLabels(path);
+
+        // For ND-100: enrich labelMeta with macro-opcode info from the
+        // decode-PLA (overrides the raw "PLA entries" comments from the
+        // SYMBOLS.TXT file with actual macro-opcode octal + mnemonics).
+        if (isND100) {
+            for (const [uaddr, entries] of Object.entries(nd100OpcodeMap)) {
+                const ua = Number(uaddr);
+                if (!labelsByAddr[ua]) continue;
+                // Collect unique mnemonics
+                const names = [...new Set(entries.map(e => e.name).filter(Boolean))];
+                const opcCount = entries.length;
+                const firstOpc = toOctal(entries[0].opcode, 6);
+                let meta;
+                if (names.length === 1) {
+                    meta = `${names[0]} (${opcCount} variant${opcCount > 1 ? 's' : ''}, base ${firstOpc})`;
+                } else if (names.length <= 4) {
+                    meta = `${names.join(', ')} (${opcCount} opcodes, base ${firstOpc})`;
+                } else {
+                    meta = `${opcCount} macro-opcodes (${names.slice(0, 4).join(', ')}, ...), base ${firstOpc}`;
+                }
+                labelMeta[ua] = meta;
+            }
+        }
+
+        disassembleAll();
+
+        // Select first non-empty instruction
+        const first = filteredList.find(d => d.raw !== 0n);
+        if (first) {
+            selectInstruction(first.addr);
+            setTimeout(() => {
+                const row = document.querySelector(`.listing-row[data-addr="${first.addr}"]`);
+                if (row) row.scrollIntoView({ block: 'center' });
+            }, 50);
+        }
+    } catch (e) {
+        document.getElementById('statusText').textContent = 'Error: ' + e.message;
+        console.error(e);
+    }
+}
+
+// Start
+init();
+</script>
+</body>
+</html>

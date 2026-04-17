@@ -1,0 +1,21 @@
+{
+  "name": "@nd100uc/rom-combiner-cli",
+  "version": "0.1.0",
+  "description": "CLI tool to combine/split ND-100/110/120 microcode EPROM images",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "nd100uc-rom": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@nd100uc/microcode": "file:../../lib/ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

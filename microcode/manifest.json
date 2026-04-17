@@ -1,0 +1,8 @@
+{
+    "files": [
+        {"path": "MC/ND-120-DELILAH", "name": "ND-120 DELILAH", "model": "ND-120", "hasLabels": false, "isND110": false},
+        {"path": "MC/ND-120-DELILAH-L", "name": "ND-120 DELILAH-L (Loader)", "model": "ND-120", "hasLabels": true, "isND110": false},
+        {"path": "MC/ND-110-RASK", "name": "ND-110 RASK", "model": "ND-110", "hasLabels": true, "isND110": true}
+    ],
+    "default": "MC/ND-120-DELILAH"
+}
